@@ -1,0 +1,252 @@
+<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Korpus Schnittmaß-Rechner – PRO V4 (Fix)</title>
+<style>
+:root{--blue:#0b6efd;--ink:#111;--muted:#555;--line:#e4e6eb}
+*{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7f8;color:var(--ink)}
+header{background:var(--blue);color:#fff;padding:12px} header h1{margin:0;font-size:18px}
+main{padding:16px;max-width:1200px;margin:0 auto}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+.wrap{display:grid;grid-template-columns:1fr 520px;gap:18px;align-items:start}
+.grid{display:grid;grid-template-columns:1fr 220px;gap:10px 16px;align-items:center}
+label{font-weight:600} input,select{padding:10px;border:1px solid #cfd3da;border-radius:8px;font-size:14px;width:100%}
+.results{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fafafa}
+.ok{color:#0a7a0a;font-weight:600}.err{color:#b00020;font-weight:600}
+svg{background:#fff;border:1px solid #ccc} button{margin-top:12px;padding:8px 14px;border:none;border-radius:8px;background:var(--blue);color:#fff;font-weight:600;cursor:pointer}
+button:hover{background:#004080}.muted{color:var(--muted);font-size:12px}.coltitle{margin:8px 0 6px;font-size:14px;font-weight:700}
+@media (max-width:980px){.wrap{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Korpus Schnittmaß-Rechner – PRO V4 (Fix)</h1></header>
+<main><div class="card"><div class="wrap">
+<div>
+  <p class="muted">Bewegliche Mittelwand, Tür/Schubladen/2-Türen, Draufsicht, Kanten L/R/O/U. Labels zuschaltbar. PDF-Export.</p>
+  <div class="grid">
+    <label>Frontart</label><select id="type"><option value="overlay">Aufliegend</option><option value="inset">Einliegend</option></select>
+    <label>Korpusbreite (mm)</label><input id="kb" value="800" type="number" step="0.1">
+    <label>Korpushöhe (mm)</label><input id="kh" value="720" type="number" step="0.1">
+    <label>Seitenwandstärke je Seite (mm)</label><input id="t_side" value="16" type="number" step="0.1">
+    <label>Deckelstärke oben (mm)</label><input id="t_top" value="16" type="number" step="0.1">
+    <label>Bodenstärke unten (mm)</label><input id="t_bot" value="16" type="number" step="0.1">
+    <label>Mittelwand</label><select id="mw_on"><option value="on">An</option><option value="off">Aus</option></select>
+    <label>Mittelwandstärke (mm)</label><input id="mw" value="19" type="number" step="0.1">
+    <label>MW-Position ab links (mm)</label><input id="mw_pos" value="" type="number" step="0.1" placeholder="leer = mittig">
+    <label>Layout (mit/ohne MW)</label>
+    <select id="layout">
+      <option value="door+drawers">Tür + Schubladen</option>
+      <option value="twoDoors">2 Türen</option>
+      <option value="onlyDoor_noMW">Nur Tür (ohne MW)</option>
+      <option value="onlyDrawers_noMW">Nur Schubladen (ohne MW)</option>
+    </select>
+    <label>Türseite (bei Tür+Schubladen)</label><select id="tuerseite"><option value="links">Links</option><option value="rechts">Rechts</option></select>
+    <label>Anzahl Schubladen</label><input id="anzSchub" value="3" type="number" min="1" step="1">
+    <label>Stegstärke (mm)</label><input id="steg" value="19" type="number" step="0.1">
+    <div class="coltitle">Kanten je Seite (Schnittmaß)</div>
+    <label>Kante links (mm)</label><input id="kL" value="2" type="number" step="0.1">
+    <label>Kante rechts (mm)</label><input id="kR" value="2" type="number" step="0.1">
+    <label>Kante oben (mm)</label><input id="kO" value="2" type="number" step="0.1">
+    <label>Kante unten (mm)</label><input id="kU" value="2" type="number" step="0.1">
+    <label>Spaltmaß umlaufend (mm)</label><input id="spalt" value="2" type="number" step="0.1">
+    <label>Runden auf (mm)</label><input id="roundTo" value="0.5" type="number" step="0.1">
+    <label>Maß-Labels</label><select id="labels"><option value="on">Ja</option><option value="off">Nein</option></select>
+  </div>
+  <div class="results"><div id="status" class="ok">Berechnet.</div><div id="summary"></div><div id="list"></div></div>
+</div>
+<div>
+  <h3 style="margin:8px 0 6px">Vorschau (Front)</h3><svg id="front" width="520" height="380"></svg>
+  <h3 style="margin:12px 0 6px">Vorschau (Draufsicht)</h3><svg id="top" width="520" height="160"></svg>
+  <div class="muted" style="margin-top:6px">Grau: Korpus • Hellgrau: Mittelwand/Stege • Blau: Türen • Hellblau: Schubladen • Weiß: Spalt</div>
+  <button id="btnPdf">📄 PDF exportieren</button>
+</div>
+</div></div></main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+function n(id){return parseFloat(document.getElementById(id).value)||0;}
+function roundTo(val){const s=n('roundTo');return s>0?Math.round(val/s)*s:val;}
+function setHTML(id,html){document.getElementById(id).innerHTML=html;}
+function clamp(v,min,max){return Math.max(min, Math.min(max, v));}
+
+function compute(){
+  const type = document.getElementById('type').value;
+  const kb=n('kb'), kh=n('kh'); const t_side=n('t_side'), t_top=n('t_top'), t_bot=n('t_bot');
+  const spalt=n('spalt'); const kL=n('kL'), kR=n('kR'), kO=n('kO'), kU=n('kU');
+  const labels=document.getElementById('labels').value==='on';
+
+  const mw_on=document.getElementById('mw_on').value==='on';
+  const mw=n('mw'); const layout=document.getElementById('layout').value;
+  const tuerseite=document.getElementById('tuerseite').value;
+  const anzSchub=Math.max(1, Math.floor(n('anzSchub'))); const steg=n('steg');
+
+  // Sichtmaße (lichte Öffnung)
+  let sichtB = kb - 2*spalt, sichtH = kh - 2*spalt;
+  if(type==='inset'){ sichtB -= 2*t_side + (mw_on?mw:0); sichtH -= t_top + t_bot; }
+  if(sichtB<=0||sichtH<=0){setStatus('Nutzmaße ≤ 0 – Eingaben prüfen.',true);return;}
+
+  // MW-Position
+  let mw_pos = parseFloat(document.getElementById('mw_pos').value);
+  if(!mw_on || layout.includes('_noMW')) mw_pos = null;
+  if(mw_pos==null || isNaN(mw_pos) || mw_pos<=0 || mw_pos>=sichtB) mw_pos = sichtB/2;
+  mw_pos = clamp(mw_pos, 10, sichtB-10);
+
+  const leftW  = mw_on ? mw_pos : sichtB;
+  const rightW = mw_on ? (sichtB - mw_pos) : 0;
+
+  // Hilfsfunktionen
+  const col = side => ({B: side==='left'? leftW : (side==='right'? rightW : sichtB), H: sichtH});
+  const cut = (B_s,H_s)=>({B_s,H_s,B_cut:roundTo(B_s-(kL+kR)),H_cut:roundTo(H_s-(kO+kU))});
+
+  // Stückliste
+  let pieces=[], notes=[];
+  if(mw_on && layout==='door+drawers'){
+    const dCol = (tuerseite==='links')?'left':'right';
+    const sCol = (tuerseite==='links')?'right':'left';
+    const d=col(dCol); pieces.push({name:`Tür (${tuerseite})`,...cut(d.B,d.H)});
+    const s=col(sCol); const totalStege=Math.max(0,anzSchub-1)*steg; const h_s=(s.H-totalStege)/anzSchub;
+    for(let i=1;i<=anzSchub;i++) pieces.push({name:`Schublade ${i}`,...cut(s.B,h_s)});
+    if(anzSchub>1) notes.push(`Stege: ${(anzSchub-1)} × ${steg.toFixed(1)} mm`);
+    notes.push(`Mittelwand bei ${mw_pos.toFixed(1)} mm (Stärke ${mw.toFixed(1)} mm)`);
+  }else if(mw_on && layout==='twoDoors'){
+    const L=col('left'), R=col('right');
+    pieces.push({name:'Tür links',...cut(L.B,L.H)});
+    pieces.push({name:'Tür rechts',...cut(R.B,R.H)});
+    notes.push(`Mittelwand bei ${mw_pos.toFixed(1)} mm (Stärke ${mw.toFixed(1)} mm)`);
+  }else if(layout==='onlyDoor_noMW'){
+    const S=col(); pieces.push({name:'Tür (ohne MW)',...cut(S.B,S.H)});
+  }else{ // onlyDrawers_noMW
+    const S=col(); const totalStege=Math.max(0,anzSchub-1)*steg; const h_s=(S.H-totalStege)/anzSchub;
+    for(let i=1;i<=anzSchub;i++) pieces.push({name:`Schublade ${i}`,...cut(S.B,h_s)});
+    if(anzSchub>1) notes.push(`Stege: ${(anzSchub-1)} × ${steg.toFixed(1)} mm`);
+  }
+
+  // Ausgabe
+  setStatus('Berechnet.',false);
+  setHTML('summary', pieces.map(p=>`${p.name}: ${p.B_cut.toFixed(1)}×${p.H_cut.toFixed(1)} mm`).join(' • '));
+  let html='<ul>';
+  pieces.forEach(p=>html+=`<li>${p.name} – Schnitt: <b>${p.B_cut.toFixed(1)} × ${p.H_cut.toFixed(1)} mm</b> (Sicht: ${p.B_s.toFixed(1)} × ${p.H_s.toFixed(1)} mm)</li>`);
+  html+=`<li>Kanten L/R/O/U: ${kL}/${kR}/${kO}/${kU} mm • Spalt: ${spalt.toFixed(1)} mm</li>`;
+  notes.forEach(n=>html+=`<li>${n}</li>`); html+='</ul>'; setHTML('list', html);
+
+  // Zeichnen
+  drawFront({type,kb,kh,t_side,t_top,t_bot,spalt,mw_on,mw,mw_pos,layout,tuerseite,anzSchub,steg,labels}, pieces, sichtB, sichtH);
+  drawTop({type,kb,t_side,mw_on,mw,mw_pos});
+}
+
+function setStatus(msg,err){const el=document.getElementById('status');el.textContent=msg;el.className=err?'err':'ok';}
+
+/* ---------- FRONT ---------- */
+function drawFront(p, pieces, sichtB, sichtH){
+  const svg=document.getElementById('front'); while(svg.firstChild) svg.removeChild(svg.firstChild);
+  const PAD=20, W=480, H=340, s=Math.max(0.05, Math.min(W/p.kb, H/p.kh));
+
+  // Korpus
+  rect(svg, PAD,PAD, p.kb*s,p.kh*s, '#e6e6e6','#333',1);
+
+  // Innenöffnung bei einliegend
+  let ox=PAD, oy=PAD, OW=p.kb*s, OH=p.kh*s;
+  if(p.type==='inset'){ ox+=p.t_side*s; OW-=2*p.t_side*s; rect(svg, ox,oy, OW,OH, '#fff','#ddd',1); }
+  const baseX=(p.type==='inset')?ox:PAD, baseY=(p.type==='inset')?oy:PAD;
+  const nutzW=(p.type==='inset')?OW:p.kb*s, nutzH=(p.type==='inset')?OH:p.kh*s;
+
+  // Sicht-Spalt umlaufend
+  const sp = p.spalt*s;
+
+  // Mittelwand
+  if(p.mw_on){
+    const xMW = baseX + p.mw_pos*s;
+    rect(svg, xMW-(p.mw*s)/2, baseY, p.mw*s, nutzH, '#bbb', '#999', .8);
+  }
+
+  // Spalten-Breiten in px
+  const leftW  = p.mw_on ? p.mw_pos*s : nutzW;
+  const rightW = p.mw_on ? (nutzW - p.mw_pos*s) : 0;
+  const col = {left:{x:baseX, w:leftW}, right:{x:baseX+leftW, w:rightW}};
+
+  // Hilfszeichner
+  function face(x,y,w,h,fill,stroke){rect(svg,x,y,w,h,fill,stroke,.9)}
+  function labelAt(x,y,str){const t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('x',x);t.setAttribute('y',y);t.setAttribute('font-size',11);t.setAttribute('text-anchor','middle');t.setAttribute('font-family','system-ui,-apple-system,Segoe UI,Roboto,Arial');t.textContent=str;svg.appendChild(t)}
+
+  // Zeichnen nach Typen
+  const drawers = pieces.filter(p=>p.name.toLowerCase().includes('schublade'));
+  const doors   = pieces.filter(p=>p.name.toLowerCase().includes('tür'));
+
+  // Türen
+  doors.forEach(d=>{
+    const isRight = d.name.toLowerCase().includes('rechts') || (p.layout==='door+drawers' && p.tuerseite==='rechts');
+    const c = (p.mw_on? (isRight?col.right:col.left) : col.left);
+    face(c.x+sp/2, baseY+sp/2, c.w-sp, nutzH-sp, '#4da3ff','#004080');
+    if(p.labels) labelAt(c.x + c.w/2, baseY + nutzH/2, `${d.B_cut.toFixed(0)}×${d.H_cut.toFixed(0)}`);
+  });
+
+  // Schubladen-Stapelsäule bestimmen
+  if(drawers.length){
+    const isRightCol = (p.mw_on && p.tuerseite==='links') || (!p.mw_on && p.layout==='onlyDrawers_noMW' && false);
+    const c = p.mw_on ? (p.tuerseite==='links'? col.right : col.left) : col.left;
+
+    // Schubladen-Zellenhöhe aus Sichtmaß
+    const totalSteg = Math.max(0, drawers.length-1) * (p.steg*s); // exakt Stegstärke
+    const cellH = (nutzH - sp - sp - totalSteg) / drawers.length; // oben/unten umlaufender Spalt
+    let y = baseY + sp/2;
+
+    drawers.forEach((d,idx)=>{
+      face(c.x+sp/2, y, c.w - sp, cellH, '#90d1ff','#004080');
+      if(p.labels) labelAt(c.x + c.w/2, y + cellH/2 + 4, `${d.B_cut.toFixed(0)}×${d.H_cut.toFixed(0)}`);
+      y += cellH;
+      if(idx < drawers.length-1){ // Steg in exakt deiner Stärke
+        rect(svg, c.x+sp/2, y, c.w - sp, p.steg*s, '#bbb', '#999', .8);
+        y += p.steg*s;
+      }
+    });
+  }
+}
+
+/* ---------- DRAUFSICHT ---------- */
+function drawTop(p){
+  const svg=document.getElementById('top'); while(svg.firstChild) svg.removeChild(svg.firstChild);
+  const PAD=20, areaW=480, depth=100, s=Math.max(0.05, Math.min(areaW/p.kb, 1));
+  rect(svg, PAD,20, p.kb*s,depth, '#e6e6e6','#333',1);
+  let ox=PAD, OW=p.kb*s;
+  if(p.type==='inset'){ ox+=p.t_side*s; OW-=2*p.t_side*s; rect(svg, ox,30, OW,depth-20,'#fff','#ddd',1); }
+  if(p.mw_on){ const xMW=ox+p.mw_pos*s; rect(svg, xMW-(p.mw*s)/2,20, p.mw*s,depth,'#bbb','#999',.8); }
+}
+
+/* ---------- Helpers ---------- */
+function rect(svg,x,y,w,h,fill,stroke,sw){const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('x',x);r.setAttribute('y',y);r.setAttribute('width',w);r.setAttribute('height',h);if(fill)r.setAttribute('fill',fill);if(stroke)r.setAttribute('stroke',stroke);if(sw)r.setAttribute('stroke-width',sw);svg.appendChild(r);return r;}
+
+/* ---------- PDF (robust, mit SVG-Fallback) ---------- */
+async function svgToPNGData(svgEl){
+  const xml = new XMLSerializer().serializeToString(svgEl);
+  const svg64 = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
+  return new Promise(res=>{const img=new Image(); img.onload=()=>{
+    const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+    const ctx=c.getContext('2d'); ctx.drawImage(img,0,0); res(c.toDataURL('image/png'));}; img.src=svg64;});
+}
+
+async function downloadPDF(){
+  const { jsPDF } = window.jspdf; const doc = new jsPDF('p','mm','a4');
+  doc.setFontSize(14); doc.text('Korpus Schnittmaß-Rechner – PRO V4 (Fix)', 10, 15);
+  const listText = document.getElementById('list').innerHTML.replace(/<\/li>/g,'\n').replace(/<[^>]+>/g,'').split('\n');
+  doc.setFontSize(10); doc.text(listText, 10, 24);
+
+  // Fallback: direkt SVG → PNG (html2canvas ist in Safari manchmal zickig)
+  try{
+    const f = await html2canvas(document.getElementById('front'));
+    const t = await html2canvas(document.getElementById('top'));
+    doc.addImage(f.toDataURL('image/png'), 'PNG', 10, 90, 190, 110);
+    doc.addImage(t.toDataURL('image/png'), 'PNG', 10, 205, 190, 60);
+  }catch(e){
+    const f = await svgToPNGData(document.getElementById('front'));
+    const t = await svgToPNGData(document.getElementById('top'));
+    doc.addImage(f, 'PNG', 10, 90, 190, 110);
+    doc.addImage(t, 'PNG', 10, 205, 190, 60);
+  }
+  doc.save('Korpus_Schnittmass_PRO_V4.pdf');
+}
+
+/* ---------- Bindings ---------- */
+function bind(){[
+  'type','kb','kh','t_side','t_top','t_bot','mw_on','mw','mw_pos','layout','tuerseite',
+  'anzSchub','steg','spalt','kL','kR','kO','kU','roundTo','labels'
+].forEach(id=>document.getElementById(id).addEventListener('input',compute));
+document.getElementById('btnPdf').addEventListener('click',downloadPDF);
+}
+window.addEventListener('load', ()=>{bind(); compute();});
+</script></body></html>
